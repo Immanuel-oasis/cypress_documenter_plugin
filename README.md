@@ -18,7 +18,6 @@ export default defineConfig({
   allowCypressEnv: false,
 
   e2e: {
-    baseUrl: 'https://tax.oasisproducts.ng',
     setupNodeEvents(on, config) {
      registerTestDocumentation(on) // add this
      return config // add this
