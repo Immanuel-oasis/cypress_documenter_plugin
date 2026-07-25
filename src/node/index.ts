@@ -1,4 +1,3 @@
-
 import * as fs from 'node:fs'
 import * as path from 'path'
 import ExcelJS from 'exceljs'
@@ -17,8 +16,15 @@ function readEntries(): TestDocEntry[] {
 }
 
 function writeEntries(entries: TestDocEntry[]) {
+  const oldEntries = readEntries()
   ensureDir()
-  fs.writeFileSync(ENTRIES_FILE, JSON.stringify(entries, null, 2))
+  // check if entry id exists
+
+  const newID = new Set(entries.map(e => e.id))
+  const filteredOldEntries = oldEntries.filter(e => !newID.has(e.id) )
+
+  const newEntries = [...filteredOldEntries, ...entries]
+  fs.writeFileSync(ENTRIES_FILE, JSON.stringify(newEntries, null, 2))
 }
 
 function formatProcedure(procedure: string[] | string): string {
@@ -94,15 +100,15 @@ async function generateXlsx(entries: TestDocEntry[]) {
   headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
   sheet.views = [{ state: 'frozen', ySplit: 1 }]
 
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const outPath = path.join(OUTPUT_DIR, `test-documentation-${timestamp}.xlsx`)
-  await workbook.xlsx.writeFile(outPath)
+  // const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  // const outPath = path.join(OUTPUT_DIR, `test-documentation-${timestamp}.xlsx`)
+  // await workbook.xlsx.writeFile(outPath)
 
   // Also keep a stable "latest" copy that's easy to link to / open repeatedly
   const latestPath = path.join(OUTPUT_DIR, 'test-documentation-latest.xlsx')
   await workbook.xlsx.writeFile(latestPath)
 
-  return { outPath, latestPath, count: entries.length }
+  return {  latestPath, count: entries.length }
 }
 
 let entries: TestDocEntry[] = [];
@@ -110,8 +116,6 @@ let entries: TestDocEntry[] = [];
 export function registerTestDocumentation(on: Cypress.PluginEvents) {
   on('before:run', () => {
     ensureDir()
-    // writeEntries([]) // start fresh each full run
-    entries = [];
   })
 
   on('task', {
