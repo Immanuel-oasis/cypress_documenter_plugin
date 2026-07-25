@@ -32,8 +32,8 @@ export default defineConfig({
 
 
 ## Frequently Asked Questions (FAQ)
-**Q1**- I followed all the steps but my cypress shows some errors
-**ans**: make sure you are using typescript version 5.*, as cypress doesnt currently support higher versions like 7
+**Q1**- I followed all the steps but my cypress shows some errors <br>
+**Ans**: make sure you are using typescript version 5.*, as cypress doesnt currently support higher versions like 7
 
-**Q2**- I am using typescript 5 and have everything else running but still get some tsconfig error
-**ans**: This is not a plugin issue you basically forgot to add tsconfig to you project. Do this by running `npx tsc --init`
+**Q2**- I am using typescript 5 and have everything else running but still get some tsconfig error <br>
+**Ans**: This is not a plugin issue you basically forgot to add tsconfig to you project. Do this by running `npx tsc --init`
