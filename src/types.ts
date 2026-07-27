@@ -2,8 +2,8 @@ export interface TestDocMeta {
   suite: string
   id: string
   description: string
-  preconditions: string[] | string
-  procedure: string[] | string
+  preconditions: string[]
+  procedure: string[]
   testData: string
   expectedResult: string
   assigned?: string | undefined

@@ -1,4 +1,3 @@
-
 import * as fs from 'node:fs'
 import * as path from 'path'
 import ExcelJS from 'exceljs'
@@ -17,8 +16,15 @@ function readEntries(): TestDocEntry[] {
 }
 
 function writeEntries(entries: TestDocEntry[]) {
+  const oldEntries = readEntries()
   ensureDir()
-  fs.writeFileSync(ENTRIES_FILE, JSON.stringify(entries, null, 2))
+  // check if entry id exists
+
+  const newID = new Set(entries.map(e => e.id))
+  const filteredOldEntries = oldEntries.filter(e => !newID.has(e.id))
+
+  const newEntries = [...filteredOldEntries, ...entries]
+  fs.writeFileSync(ENTRIES_FILE, JSON.stringify(newEntries, null, 2))
 }
 
 function formatProcedure(procedure: string[] | string): string {
@@ -110,8 +116,6 @@ let entries: TestDocEntry[] = [];
 export function registerTestDocumentation(on: Cypress.PluginEvents) {
   on('before:run', () => {
     ensureDir()
-    // writeEntries([]) // start fresh each full run
-    entries = [];
   })
 
   on('task', {
