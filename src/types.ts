@@ -16,7 +16,7 @@ export interface DocTestDetails {
   /** e.g. "Home Page" — groups rows the same way your example sheet does */
   suite: string
   /** e.g. "TC-HOME-001" */
-  id: string
+  id?: string
   description?: string
   testData: string
   expectedResult: string

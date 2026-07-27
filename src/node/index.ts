@@ -1,11 +1,16 @@
-
 import * as fs from 'fs'
 import * as path from 'path'
 import ExcelJS from 'exceljs'
-import type { TestDocEntry } from '../support/types/test-documentation'
+import type { TestDocEntry } from '../types' // Updated path to match new structure
 
 const OUTPUT_DIR = path.join(process.cwd(), 'cypress', 'test-docs')
 const ENTRIES_FILE = path.join(OUTPUT_DIR, '_entries.json')
+const REGISTRY_FILE = path.join(OUTPUT_DIR, '_id_registry.json')
+
+interface IdRegistry {
+  prefixCounters: Record<string, number>
+  testKeyToId: Record<string, string>
+}
 
 function ensureDir() {
   if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
@@ -20,12 +25,6 @@ function writeEntries(entries: TestDocEntry[]) {
   ensureDir()
   const oldEntries = readEntries()
 
-  // Merge by testKey (spec path + full test title), NOT by the user-typed
-  // `id`. testKey is auto-computed and guaranteed unique + stable across
-  // runs regardless of execution order; `id` is just a human-readable
-  // label and can't be trusted to be unique (people copy-paste test cases
-  // and forget to update the id). Deduping by `id` would silently drop one
-  // of two different tests that happen to share the same typed id.
   const newKeys = new Set(entries.map((e) => e.testKey))
   const keptOldEntries = oldEntries.filter((e) => !newKeys.has(e.testKey))
 
@@ -36,13 +35,94 @@ function writeEntries(entries: TestDocEntry[]) {
   fs.writeFileSync(ENTRIES_FILE, JSON.stringify(merged, null, 2))
 }
 
+// --- NEW: ID GENERATION LOGIC ---
+
+function readRegistry(): IdRegistry {
+  if (!fs.existsSync(REGISTRY_FILE)) return { prefixCounters: {}, testKeyToId: {} }
+  return JSON.parse(fs.readFileSync(REGISTRY_FILE, 'utf-8'))
+}
+
+function writeRegistry(registry: IdRegistry) {
+  ensureDir()
+  fs.writeFileSync(REGISTRY_FILE, JSON.stringify(registry, null, 2))
+}
+
 /**
- * Doesn't affect what gets written — testKey already keeps different tests
- * from colliding. This just surfaces a helpful warning so a copy-paste
- * mistake (two different tests both labeled "TC_ADM_001") gets noticed and
- * fixed, instead of silently producing a spreadsheet with a confusing
- * duplicate label in the Test Case ID column.
+ * Extracts the base prefix from a user-provided ID.
+ * e.g., "TC_ADM_001" -> "TC_ADM"
+ * e.g., "TC_ADM" -> "TC_ADM"
  */
+function getBasePrefix(id: string): string {
+  const match = id.match(/^(.*?)(?:_\d+)?$/)
+  return match ? match[1] : id
+}
+
+/**
+ * Auto-derives a prefix from the suite name.
+ * Rules: 1st 3 letters of word 1, 1st letter of word 2. Fallbacks for short strings.
+ */
+function derivePrefix(suite: string): string {
+  // Extract only alphabetic words, ignoring numbers/symbols
+  const words = suite.match(/[A-Za-z]+/g) || []
+  let prefix = ''
+
+  if (words.length === 0) return 'TEST' // Absolute fallback
+
+  const w1 = words[0].toUpperCase()
+  prefix += w1.substring(0, 3)
+
+  if (words.length > 1) {
+    const w2 = words[1].toUpperCase()
+    prefix += w2.substring(0, 1)
+  } else {
+    // If only one word exists, grab the 4th letter if available
+    prefix += w1.substring(3, 4)
+  }
+
+  // Pad with 'X' if the suite name was too short (e.g., "Ad A" -> "ADA" -> "ADAX")
+  while (prefix.length < 4) {
+    prefix += 'X'
+  }
+
+  return `TC_${prefix}`
+}
+
+/**
+ * Resolves the final ID string for a test.
+ */
+function resolveId(entry: TestDocEntry, registry: IdRegistry): string {
+  // 1. If this exact test has already been registered, return its locked-in ID
+  if (registry.testKeyToId[entry.testKey]) {
+    return registry.testKeyToId[entry.testKey]
+  }
+
+  let basePrefix: string
+
+  // 2. Determine the base prefix
+  if (entry.id) {
+    // User provided an ID (e.g., "TC_ADM" or "TC_ADM_005"). Strip numbers to get base.
+    basePrefix = getBasePrefix(entry.id)
+  } else {
+    // User omitted ID. Auto-derive from suite name.
+    basePrefix = derivePrefix(entry.suite)
+  }
+
+  // 3. Get the next number for this prefix
+  const currentCount = registry.prefixCounters[basePrefix] || 0
+  const nextCount = currentCount + 1
+  registry.prefixCounters[basePrefix] = nextCount
+
+  // 4. Format the final ID (e.g., TC_HOMP_0001)
+  const finalId = `${basePrefix}_${String(nextCount).padStart(4, '0')}`
+
+  // 5. Lock it to this testKey forever
+  registry.testKeyToId[entry.testKey] = finalId
+
+  return finalId
+}
+// --- END NEW LOGIC ---
+
+
 function warnOnDuplicateIds(entries: TestDocEntry[]) {
   const idToKeys = new Map<string, Set<string>>()
   for (const entry of entries) {
@@ -63,17 +143,11 @@ function warnOnDuplicateIds(entries: TestDocEntry[]) {
   }
 }
 
-/**
- * Wipes all accumulated entries. Not called automatically — accumulation
- * across runs is the whole point (see writeEntries above). Opt in with:
- *   RESET_TEST_DOCS=true npx cypress run
- * Useful for pruning stale rows after renaming/removing test cases, since
- * nothing else ever removes an old entry that no longer matches any ID
- * produced by the current run.
- */
 function resetEntries() {
   ensureDir()
   fs.writeFileSync(ENTRIES_FILE, JSON.stringify([], null, 2))
+  // Also reset the ID registry so counters start fresh
+  fs.writeFileSync(REGISTRY_FILE, JSON.stringify({ prefixCounters: {}, testKeyToId: {} }, null, 2))
 }
 
 function formatList(value: string[] | string, numbered: boolean): string {
@@ -125,7 +199,6 @@ async function generateXlsx(entries: TestDocEntry[]) {
     row.alignment = { wrapText: true, vertical: 'top', horizontal: 'left' }
     row.font = { name: 'Arial', size: 10 }
 
-    // Color the Status cell green/red for a quick visual scan
     const statusCell = row.getCell('status')
     statusCell.font = {
       name: 'Arial',
@@ -140,7 +213,6 @@ async function generateXlsx(entries: TestDocEntry[]) {
     }
   })
 
-  // Header styling
   const headerRow = sheet.getRow(1)
   headerRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } }
   headerRow.fill = {
@@ -151,8 +223,6 @@ async function generateXlsx(entries: TestDocEntry[]) {
   headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
   sheet.views = [{ state: 'frozen', ySplit: 1 }]
 
-  // Clean up any old timestamped files from previous versions of this script,
-  // or from before this fix — keeps the folder down to just one file.
   cleanupOldFiles()
 
   const latestPath = path.join(OUTPUT_DIR, 'test-documentation-latest.xlsx')
@@ -161,14 +231,7 @@ async function generateXlsx(entries: TestDocEntry[]) {
     await workbook.xlsx.writeFile(latestPath)
   } catch (err: any) {
     if (err?.code === 'EBUSY' || err?.code === 'EPERM') {
-      // The file is almost certainly open in Excel right now, which takes
-      // an exclusive lock on Windows. Don't crash the whole task — fall
-      // back to a timestamped file so this run's results aren't lost, and
-      // tell the person what to do.
-      const fallbackPath = path.join(
-        OUTPUT_DIR,
-        `test-documentation-${Date.now()}.xlsx`
-      )
+      const fallbackPath = path.join(OUTPUT_DIR, `test-documentation-${Date.now()}.xlsx`)
       await workbook.xlsx.writeFile(fallbackPath)
       // eslint-disable-next-line no-console
       console.warn(
@@ -190,20 +253,11 @@ function cleanupOldFiles() {
 
   const files = fs.readdirSync(OUTPUT_DIR)
   for (const file of files) {
-    // Skip Microsoft Office's own lock files (created automatically while
-    // a workbook is open, e.g. "~$test-documentation-latest.xlsx"). These
-    // aren't ours to manage, and deleting one while Excel has the real file
-    // open can throw.
     if (file.startsWith('~$')) continue
-
-    // Delete every generated xlsx EXCEPT the stable "latest" one
-    // (which we're about to overwrite anyway) and the entries json.
     if (file.endsWith('.xlsx') && file !== 'test-documentation-latest.xlsx') {
       try {
         fs.unlinkSync(path.join(OUTPUT_DIR, file))
       } catch (err: any) {
-        // Don't let a locked/in-use file crash the whole cleanup —
-        // just leave it and move on.
         // eslint-disable-next-line no-console
         console.warn(`⚠️  Could not delete ${file} (probably in use): ${err.message}`)
       }
@@ -223,11 +277,6 @@ async function regenerateAndLog(source: string) {
 }
 
 export function registerTestDocumentation(on: Cypress.PluginEvents, config: Cypress.PluginConfigOptions) {
-  // Everything in this plugin is a no-op during `cypress open`. Documentation
-  // only happens during `cypress run` — this is what avoids duplicate/
-  // accumulating entries from refreshing or re-running specs interactively.
-  // The browser-side guard lives in support/e2e-addition.ts (afterEach);
-  // this is a second, independent guard in case a task ever fires anyway.
   const isRunMode = !config.isInteractive
 
   on('before:run', () => {
@@ -236,16 +285,31 @@ export function registerTestDocumentation(on: Cypress.PluginEvents, config: Cypr
     if (process.env.RESET_TEST_DOCS === 'true') {
       resetEntries()
       // eslint-disable-next-line no-console
-      console.log('\n🗑️  RESET_TEST_DOCS=true — cleared all previously accumulated entries\n')
+      console.log('\n🗑️  RESET_TEST_DOCS=true — cleared all previously accumulated entries and ID registry\n')
     }
   })
 
   on('task', {
     recordTestDoc(entry: TestDocEntry) {
       if (!isRunMode) return null
+
+      // 1. Read the current ID registry
+      const registry = readRegistry()
+
+      // 2. Resolve or generate the ID
+      const finalId = resolveId(entry, registry)
+
+      // 3. Assign the final ID to the entry
+      entry.id = finalId
+
+      // 4. Save the updated registry (new counters and testKey mappings)
+      writeRegistry(registry)
+
+      // 5. Continue with normal entry merging
       const entries = readEntries()
       entries.push(entry)
       writeEntries(entries)
+
       return null
     },
   })
