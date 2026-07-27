@@ -29,6 +29,9 @@ export default defineConfig({
 #### support/e2e.ts
 `import 'cypress_test_documenter/src/browser' // add this line`
 
+## How to use
+
+
 
 ## Frequently Asked Questions (FAQ)
 **Q1**- I followed all the steps but my cypress shows some errors <br>

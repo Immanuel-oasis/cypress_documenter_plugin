@@ -1,4 +1,5 @@
-import * as fs from 'node:fs'
+
+import * as fs from 'fs'
 import * as path from 'path'
 import ExcelJS from 'exceljs'
 import type { TestDocEntry } from '../support/types/test-documentation'
@@ -16,22 +17,72 @@ function readEntries(): TestDocEntry[] {
 }
 
 function writeEntries(entries: TestDocEntry[]) {
-  const oldEntries = readEntries()
   ensureDir()
-  // check if entry id exists
+  const oldEntries = readEntries()
 
-  const newID = new Set(entries.map(e => e.id))
-  const filteredOldEntries = oldEntries.filter(e => !newID.has(e.id))
+  // Merge by testKey (spec path + full test title), NOT by the user-typed
+  // `id`. testKey is auto-computed and guaranteed unique + stable across
+  // runs regardless of execution order; `id` is just a human-readable
+  // label and can't be trusted to be unique (people copy-paste test cases
+  // and forget to update the id). Deduping by `id` would silently drop one
+  // of two different tests that happen to share the same typed id.
+  const newKeys = new Set(entries.map((e) => e.testKey))
+  const keptOldEntries = oldEntries.filter((e) => !newKeys.has(e.testKey))
 
-  const newEntries = [...filteredOldEntries, ...entries]
-  fs.writeFileSync(ENTRIES_FILE, JSON.stringify(newEntries, null, 2))
+  const merged = [...keptOldEntries, ...entries]
+
+  warnOnDuplicateIds(merged)
+
+  fs.writeFileSync(ENTRIES_FILE, JSON.stringify(merged, null, 2))
 }
 
-function formatProcedure(procedure: string[] | string): string {
-  if (Array.isArray(procedure)) {
-    return procedure.map((step, i) => `${i + 1}. ${step}`).join('\n')
+/**
+ * Doesn't affect what gets written — testKey already keeps different tests
+ * from colliding. This just surfaces a helpful warning so a copy-paste
+ * mistake (two different tests both labeled "TC_ADM_001") gets noticed and
+ * fixed, instead of silently producing a spreadsheet with a confusing
+ * duplicate label in the Test Case ID column.
+ */
+function warnOnDuplicateIds(entries: TestDocEntry[]) {
+  const idToKeys = new Map<string, Set<string>>()
+  for (const entry of entries) {
+    if (!idToKeys.has(entry.id)) idToKeys.set(entry.id, new Set())
+    idToKeys.get(entry.id)!.add(entry.testKey)
   }
-  return procedure
+
+  for (const [id, keys] of idToKeys) {
+    if (keys.size > 1) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `\n⚠️  Duplicate Test Case ID "${id}" used by ${keys.size} different tests:\n` +
+        Array.from(keys).map((k) => `   - ${k}`).join('\n') +
+        `\n   Both are kept in the spreadsheet (no data lost), but you'll ` +
+        `probably want to give them distinct IDs.\n`
+      )
+    }
+  }
+}
+
+/**
+ * Wipes all accumulated entries. Not called automatically — accumulation
+ * across runs is the whole point (see writeEntries above). Opt in with:
+ *   RESET_TEST_DOCS=true npx cypress run
+ * Useful for pruning stale rows after renaming/removing test cases, since
+ * nothing else ever removes an old entry that no longer matches any ID
+ * produced by the current run.
+ */
+function resetEntries() {
+  ensureDir()
+  fs.writeFileSync(ENTRIES_FILE, JSON.stringify([], null, 2))
+}
+
+function formatList(value: string[] | string, numbered: boolean): string {
+  if (Array.isArray(value)) {
+    return numbered
+      ? value.map((item, i) => `${i + 1}. ${item}`).join('\n')
+      : value.join('\n')
+  }
+  return value
 }
 
 async function generateXlsx(entries: TestDocEntry[]) {
@@ -61,8 +112,8 @@ async function generateXlsx(entries: TestDocEntry[]) {
       suite: entry.suite,
       id: entry.id,
       description: entry.description,
-      preconditions: formatProcedure(entry.preconditions),
-      procedure: formatProcedure(entry.procedure),
+      preconditions: formatList(entry.preconditions, false),
+      procedure: formatList(entry.procedure, true),
       testData: entry.testData,
       expectedResult: entry.expectedResult,
       actualResult: entry.actualResult,
@@ -100,38 +151,107 @@ async function generateXlsx(entries: TestDocEntry[]) {
   headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
   sheet.views = [{ state: 'frozen', ySplit: 1 }]
 
-  // const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-  // const outPath = path.join(OUTPUT_DIR, `test-documentation-${timestamp}.xlsx`)
-  // await workbook.xlsx.writeFile(outPath)
+  // Clean up any old timestamped files from previous versions of this script,
+  // or from before this fix — keeps the folder down to just one file.
+  cleanupOldFiles()
 
-  // Also keep a stable "latest" copy that's easy to link to / open repeatedly
   const latestPath = path.join(OUTPUT_DIR, 'test-documentation-latest.xlsx')
-  await workbook.xlsx.writeFile(latestPath)
+
+  try {
+    await workbook.xlsx.writeFile(latestPath)
+  } catch (err: any) {
+    if (err?.code === 'EBUSY' || err?.code === 'EPERM') {
+      // The file is almost certainly open in Excel right now, which takes
+      // an exclusive lock on Windows. Don't crash the whole task — fall
+      // back to a timestamped file so this run's results aren't lost, and
+      // tell the person what to do.
+      const fallbackPath = path.join(
+        OUTPUT_DIR,
+        `test-documentation-${Date.now()}.xlsx`
+      )
+      await workbook.xlsx.writeFile(fallbackPath)
+      // eslint-disable-next-line no-console
+      console.warn(
+        `\n⚠️  Could not overwrite test-documentation-latest.xlsx — it's ` +
+        `probably open in Excel right now. Close it and re-run to get a ` +
+        `single "latest" file again. Wrote this run's results to:\n` +
+        `   ${fallbackPath}\n`
+      )
+      return { latestPath: fallbackPath, count: entries.length }
+    }
+    throw err
+  }
 
   return { latestPath, count: entries.length }
 }
 
-let entries: TestDocEntry[] = [];
+function cleanupOldFiles() {
+  if (!fs.existsSync(OUTPUT_DIR)) return
 
-export function registerTestDocumentation(on: Cypress.PluginEvents) {
+  const files = fs.readdirSync(OUTPUT_DIR)
+  for (const file of files) {
+    // Skip Microsoft Office's own lock files (created automatically while
+    // a workbook is open, e.g. "~$test-documentation-latest.xlsx"). These
+    // aren't ours to manage, and deleting one while Excel has the real file
+    // open can throw.
+    if (file.startsWith('~$')) continue
+
+    // Delete every generated xlsx EXCEPT the stable "latest" one
+    // (which we're about to overwrite anyway) and the entries json.
+    if (file.endsWith('.xlsx') && file !== 'test-documentation-latest.xlsx') {
+      try {
+        fs.unlinkSync(path.join(OUTPUT_DIR, file))
+      } catch (err: any) {
+        // Don't let a locked/in-use file crash the whole cleanup —
+        // just leave it and move on.
+        // eslint-disable-next-line no-console
+        console.warn(`⚠️  Could not delete ${file} (probably in use): ${err.message}`)
+      }
+    }
+  }
+}
+
+async function regenerateAndLog(source: string) {
+  const entries = readEntries()
+  if (entries.length === 0) return
+
+  const result = await generateXlsx(entries)
+  // eslint-disable-next-line no-console
+  console.log(
+    `\n📄 [${source}] Test documentation updated: ${result.latestPath} (${result.count} test cases)\n`
+  )
+}
+
+export function registerTestDocumentation(on: Cypress.PluginEvents, config: Cypress.PluginConfigOptions) {
+  // Everything in this plugin is a no-op during `cypress open`. Documentation
+  // only happens during `cypress run` — this is what avoids duplicate/
+  // accumulating entries from refreshing or re-running specs interactively.
+  // The browser-side guard lives in support/e2e-addition.ts (afterEach);
+  // this is a second, independent guard in case a task ever fires anyway.
+  const isRunMode = !config.isInteractive
+
   on('before:run', () => {
+    if (!isRunMode) return
     ensureDir()
+    if (process.env.RESET_TEST_DOCS === 'true') {
+      resetEntries()
+      // eslint-disable-next-line no-console
+      console.log('\n🗑️  RESET_TEST_DOCS=true — cleared all previously accumulated entries\n')
+    }
   })
 
   on('task', {
     recordTestDoc(entry: TestDocEntry) {
+      if (!isRunMode) return null
+      const entries = readEntries()
       entries.push(entry)
+      writeEntries(entries)
       return null
     },
   })
 
   on('after:run', async () => {
-    if (entries.length === 0) return
-    writeEntries(entries)
-    const result = await generateXlsx(entries)
-    // eslint-disable-next-line no-console
-    console.log(
-      `\n📄 Test documentation generated: ${result.latestPath} (${result.count} test cases)\n`
-    )
+    if (!isRunMode) return
+    await regenerateAndLog('after:run')
   })
 }
