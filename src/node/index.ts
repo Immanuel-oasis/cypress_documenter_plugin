@@ -94,15 +94,15 @@ async function generateXlsx(entries: TestDocEntry[]) {
   headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
   sheet.views = [{ state: 'frozen', ySplit: 1 }]
 
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const outPath = path.join(OUTPUT_DIR, `test-documentation-${timestamp}.xlsx`)
-  await workbook.xlsx.writeFile(outPath)
+  // const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  // const outPath = path.join(OUTPUT_DIR, `test-documentation-${timestamp}.xlsx`)
+  // await workbook.xlsx.writeFile(outPath)
 
   // Also keep a stable "latest" copy that's easy to link to / open repeatedly
   const latestPath = path.join(OUTPUT_DIR, 'test-documentation-latest.xlsx')
   await workbook.xlsx.writeFile(latestPath)
 
-  return { outPath, latestPath, count: entries.length }
+  return { latestPath, count: entries.length }
 }
 
 let entries: TestDocEntry[] = [];
