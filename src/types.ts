@@ -13,22 +13,17 @@
 
 /** What you pass to cy.docTest() — steps get added afterward via cy.precondition()/cy.procedure() */
 export interface DocTestDetails {
-  /** e.g. "Home Page" — groups rows the same way your example sheet does */
-  suite: string
+  /** e.g. "Home Page" */
+  suite?: string
   /** e.g. "TC-HOME-001" */
   id?: string
-  description?: string
+  description: string
   testData: string
-  expectedResult: string
+  expectedResult?: string
   /** Optional — leave blank to fall back to the sheet's "Assigned" column being empty */
   assigned?: string
   /** Optional — e.g. "Tested on the following Browsers: Brave, Chrome, and Microsoft Edge" */
   comment?: string
-  /**
-   * Optional override. If omitted, the afterEach hook fills this in automatically:
-   * - on pass: same text as expectedResult
-   * - on fail: the Cypress/Mocha error message
-   */
   actualResultOverride?: string
 }
 

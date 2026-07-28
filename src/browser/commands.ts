@@ -33,11 +33,13 @@ export function clearCurrentDocMeta(): void {
 
 Cypress.Commands.add('docTest', (details: DocTestDetails) => {
   const testKey = `${Cypress.spec.relative}::${Cypress.currentTest.titlePath.join(' > ')}`
-  const description = details.description ?? Cypress.currentTest.title
+  const expectedResult = details.expectedResult ?? Cypress.currentTest.title
+  const suite = details.suite ?? Cypress.currentTest.titlePath[0]
   return cy.then(() => {
     currentDocMeta = {
       ...details,
-      description,
+      expectedResult,
+      suite,
       testKey,
       preconditions: [],
       procedure: []

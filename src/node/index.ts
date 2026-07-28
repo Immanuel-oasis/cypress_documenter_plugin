@@ -35,7 +35,6 @@ function writeEntries(entries: TestDocEntry[]) {
   fs.writeFileSync(ENTRIES_FILE, JSON.stringify(merged, null, 2))
 }
 
-// --- NEW: ID GENERATION LOGIC ---
 
 function readRegistry(): IdRegistry {
   if (!fs.existsSync(REGISTRY_FILE)) return { prefixCounters: {}, testKeyToId: {} }
@@ -49,7 +48,9 @@ function writeRegistry(registry: IdRegistry) {
 
 /**
  * Extracts the base prefix from a user-provided ID.
+ * 
  * e.g., "TC_ADM_001" -> "TC_ADM"
+ * 
  * e.g., "TC_ADM" -> "TC_ADM"
  */
 function getBasePrefix(id: string): string {
@@ -62,24 +63,29 @@ function getBasePrefix(id: string): string {
  * Rules: 1st 3 letters of word 1, 1st letter of word 2. Fallbacks for short strings.
  */
 function derivePrefix(suite: string): string {
-  // Extract only alphabetic words, ignoring numbers/symbols
-  const words = suite.match(/[A-Za-z]+/g) || []
+  // Extract actual words first
+  const words = suite.match(/[a-zA-Z]+/g) || []
   let prefix = ''
 
   if (words.length === 0) return 'TEST' // Absolute fallback
 
-  const w1 = words[0].toUpperCase()
+  // Keep the first letter as-is, strip vowels from the rest of the word
+  const stripVowelsAfterFirst = (word: string): string => {
+    const first = word[0]
+    const rest = word.slice(1).replace(/[aeiouAEIOU]/g, '')
+    return (first + rest).toUpperCase()
+  }
+
+  const w1 = stripVowelsAfterFirst(words[0]!)
   prefix += w1.substring(0, 3)
 
   if (words.length > 1) {
-    const w2 = words[1].toUpperCase()
+    const w2 = stripVowelsAfterFirst(words[1]!)
     prefix += w2.substring(0, 1)
   } else {
-    // If only one word exists, grab the 4th letter if available
     prefix += w1.substring(3, 4)
   }
 
-  // Pad with 'X' if the suite name was too short (e.g., "Ad A" -> "ADA" -> "ADAX")
   while (prefix.length < 4) {
     prefix += 'X'
   }
