@@ -1,7 +1,8 @@
 import * as fs from 'fs'
-import * as path from 'path'
+import * as path from 'node:path'
 import ExcelJS from 'exceljs'
-import type { TestDocEntry } from '../types' // Updated path to match new structure
+import type { TestDocEntry } from '../types'
+import { extractFullProcedureList } from './extractProcedure'
 
 const OUTPUT_DIR = path.join(process.cwd(), 'cypress', 'test-docs')
 const ENTRIES_FILE = path.join(OUTPUT_DIR, '_entries.json')
@@ -35,7 +36,6 @@ function writeEntries(entries: TestDocEntry[]) {
   fs.writeFileSync(ENTRIES_FILE, JSON.stringify(merged, null, 2))
 }
 
-
 function readRegistry(): IdRegistry {
   if (!fs.existsSync(REGISTRY_FILE)) return { prefixCounters: {}, testKeyToId: {} }
   return JSON.parse(fs.readFileSync(REGISTRY_FILE, 'utf-8'))
@@ -46,35 +46,22 @@ function writeRegistry(registry: IdRegistry) {
   fs.writeFileSync(REGISTRY_FILE, JSON.stringify(registry, null, 2))
 }
 
-/**
- * Extracts the base prefix from a user-provided ID.
- * 
- * e.g., "TC_ADM_001" -> "TC_ADM"
- * 
- * e.g., "TC_ADM" -> "TC_ADM"
- */
 function getBasePrefix(id: string): string {
-  const match = id.match(/^(.*?)(?:_\d+)?$/)
+  const match = id.match(/^(.*?)(?:-\d+)?$/)
   return match ? match[1] : id
 }
 
-/**
- * Auto-derives a prefix from the suite name.
- * Rules: 1st 3 letters of word 1, 1st letter of word 2. Fallbacks for short strings.
- */
+function stripVowelsAfterFirst(word: string): string {
+  const first = word[0]
+  const rest = word.slice(1).replace(/[aeiouAEIOU]/g, '')
+  return (first + rest).toUpperCase()
+}
+
 function derivePrefix(suite: string): string {
-  // Extract actual words first
   const words = suite.match(/[a-zA-Z]+/g) || []
   let prefix = ''
 
-  if (words.length === 0) return 'TEST' // Absolute fallback
-
-  // Keep the first letter as-is, strip vowels from the rest of the word
-  const stripVowelsAfterFirst = (word: string): string => {
-    const first = word[0]
-    const rest = word.slice(1).replace(/[aeiouAEIOU]/g, '')
-    return (first + rest).toUpperCase()
-  }
+  if (words.length === 0) return 'TEST'
 
   const w1 = stripVowelsAfterFirst(words[0]!)
   prefix += w1.substring(0, 3)
@@ -90,50 +77,38 @@ function derivePrefix(suite: string): string {
     prefix += 'X'
   }
 
-  return `TC_${prefix}`
+  return `TC-${prefix}`
 }
 
-/**
- * Resolves the final ID string for a test.
- */
 function resolveId(entry: TestDocEntry, registry: IdRegistry): string {
-  // 1. If this exact test has already been registered, return its locked-in ID
   if (registry.testKeyToId[entry.testKey]) {
     return registry.testKeyToId[entry.testKey]
   }
 
   let basePrefix: string
 
-  // 2. Determine the base prefix
   if (entry.id) {
-    // User provided an ID (e.g., "TC_ADM" or "TC_ADM_005"). Strip numbers to get base.
     basePrefix = getBasePrefix(entry.id)
   } else {
-    // User omitted ID. Auto-derive from suite name.
-    basePrefix = derivePrefix(entry.suite)
+    basePrefix = derivePrefix(entry.suite!)
   }
 
-  // 3. Get the next number for this prefix
   const currentCount = registry.prefixCounters[basePrefix] || 0
   const nextCount = currentCount + 1
   registry.prefixCounters[basePrefix] = nextCount
 
-  // 4. Format the final ID (e.g., TC_HOMP_0001)
-  const finalId = `${basePrefix}_${String(nextCount).padStart(4, '0')}`
+  const finalId = `${basePrefix}-${String(nextCount).padStart(3, '0')}`
 
-  // 5. Lock it to this testKey forever
   registry.testKeyToId[entry.testKey] = finalId
 
   return finalId
 }
-// --- END NEW LOGIC ---
-
 
 function warnOnDuplicateIds(entries: TestDocEntry[]) {
   const idToKeys = new Map<string, Set<string>>()
   for (const entry of entries) {
-    if (!idToKeys.has(entry.id)) idToKeys.set(entry.id, new Set())
-    idToKeys.get(entry.id)!.add(entry.testKey)
+    if (!idToKeys.has(entry.id!)) idToKeys.set(entry.id!, new Set())
+    idToKeys.get(entry.id!)!.add(entry.testKey)
   }
 
   for (const [id, keys] of idToKeys) {
@@ -152,8 +127,38 @@ function warnOnDuplicateIds(entries: TestDocEntry[]) {
 function resetEntries() {
   ensureDir()
   fs.writeFileSync(ENTRIES_FILE, JSON.stringify([], null, 2))
-  // Also reset the ID registry so counters start fresh
   fs.writeFileSync(REGISTRY_FILE, JSON.stringify({ prefixCounters: {}, testKeyToId: {} }, null, 2))
+}
+
+/**
+ * On a failed test, statically re-parses the spec file to recover every
+ * cy.procedure() call that was WRITTEN for this test, including ones that
+ * never ran because an earlier step failed. Diffs that against what
+ * actually completed (entry.procedure, already populated at runtime) and
+ * returns the remainder as "skipped".
+ *
+ * Assumes completed steps are always a prefix of the full list — true as
+ * long as cy.procedure() calls execute in source order, which they do.
+ *
+ * Returns [] (not an error) if the file can't be parsed or the test can't
+ * be located — skipped-step highlighting just silently doesn't apply.
+ */
+function resolveSkippedProcedures(entry: TestDocEntry): string[] {
+  if (entry.status !== 'Failed') return []
+  if (!entry.specRelativePath || !entry.titlePath) return []
+
+  const absolutePath = path.resolve(process.cwd(), entry.specRelativePath)
+  const fullList = extractFullProcedureList(absolutePath, entry.titlePath)
+  if (!fullList) return []
+
+  // Completed steps should be a prefix of the full list. If they've
+  // diverged (e.g. the test was edited between runs), don't guess —
+  // just skip highlighting rather than show something misleading.
+  const completedCount = entry.procedure.length
+  const prefixMatches = entry.procedure.every((step, i) => fullList[i] === step)
+  if (!prefixMatches) return []
+
+  return fullList.slice(completedCount)
 }
 
 function formatList(value: string[] | string, numbered: boolean): string {
@@ -163,6 +168,38 @@ function formatList(value: string[] | string, numbered: boolean): string {
       : value.join('\n')
   }
   return value
+}
+
+/**
+ * Builds the rich-text runs for the "Test Procedure" cell: completed steps
+ * in normal black text, skipped steps in red — all numbered continuously
+ * in one cell, in one flowing list.
+ */
+function buildProcedureRichText(
+  completed: string[],
+  skipped: string[]
+): ExcelJS.CellRichTextValue {
+  const richText: { text: string; font?: Partial<ExcelJS.Font> }[] = []
+
+  completed.forEach((step, i) => {
+    const prefix = i === 0 ? '' : '\n'
+    richText.push({ text: `${prefix}${i + 1}. ${step}`, font: { color: { argb: '000000' } } })
+  })
+
+  skipped.forEach((step, i) => {
+    const num = completed.length + i + 1
+    const prefix = completed.length === 0 && i === 0 ? '' : '\n'
+    richText.push({
+      text: `${prefix}${num}. ${step}`,
+      font: { color: { argb: 'FFCC0000' }, italic: true },
+    })
+  })
+
+  if (richText.length === 0) {
+    richText.push({ text: '' })
+  }
+
+  return { richText }
 }
 
 async function generateXlsx(entries: TestDocEntry[]) {
@@ -193,7 +230,6 @@ async function generateXlsx(entries: TestDocEntry[]) {
       id: entry.id,
       description: entry.description,
       preconditions: formatList(entry.preconditions, false),
-      procedure: formatList(entry.procedure, true),
       testData: entry.testData,
       expectedResult: entry.expectedResult,
       actualResult: entry.actualResult,
@@ -201,6 +237,14 @@ async function generateXlsx(entries: TestDocEntry[]) {
       assigned: entry.assigned || '',
       comment: entry.comment || '',
     })
+
+    // Procedure column set separately as rich text (black = completed,
+    // red = written in the test but never reached).
+    const procedureCell = row.getCell('procedure')
+    procedureCell.value = buildProcedureRichText(
+      entry.procedure,
+      entry.skippedProcedure || []
+    )
 
     row.alignment = { wrapText: true, vertical: 'top', horizontal: 'left' }
     row.font = { name: 'Arial', size: 10 }
@@ -231,13 +275,13 @@ async function generateXlsx(entries: TestDocEntry[]) {
 
   cleanupOldFiles()
 
-  const latestPath = path.join(OUTPUT_DIR, 'test-documentation-latest.xlsx')
+  const latestPath = path.join(OUTPUT_DIR, 'test-documentation-latest.xls')
 
   try {
     await workbook.xlsx.writeFile(latestPath)
   } catch (err: any) {
     if (err?.code === 'EBUSY' || err?.code === 'EPERM') {
-      const fallbackPath = path.join(OUTPUT_DIR, `test-documentation-${Date.now()}.xlsx`)
+      const fallbackPath = path.join(OUTPUT_DIR, `test-documentation-${Date.now()}.xls`)
       await workbook.xlsx.writeFile(fallbackPath)
       // eslint-disable-next-line no-console
       console.warn(
@@ -299,22 +343,14 @@ export function registerTestDocumentation(on: Cypress.PluginEvents, config: Cypr
     recordTestDoc(entry: TestDocEntry) {
       if (!isRunMode) return null
 
-      // 1. Read the current ID registry
       const registry = readRegistry()
-
-      // 2. Resolve or generate the ID
       const finalId = resolveId(entry, registry)
-
-      // 3. Assign the final ID to the entry
       entry.id = finalId
-
-      // 4. Save the updated registry (new counters and testKey mappings)
       writeRegistry(registry)
 
-      // 5. Continue with normal entry merging
-      const entries = readEntries()
-      entries.push(entry)
-      writeEntries(entries)
+      entry.skippedProcedure = resolveSkippedProcedures(entry)
+
+      writeEntries([entry])
 
       return null
     },

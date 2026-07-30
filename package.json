@@ -5,23 +5,24 @@
   "license": "ISC",
   "author": "Immanuel",
   "type": "commonjs",
-  "main": "src/node/index.ts",
-  "browser": "src/browser/index.ts",
-  "types": "src/types.ts",
+  "main": "dist/node/index.js",
+  "browser": "dist/browser/commands.js",
+  "types": "dist/types.d.ts",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
+    "typescript": ">=4.0.0 < 5.4.0",
     "exceljs": "^4.4.0"
   },
   "devDependencies": {
     "@types/node": "^26.1.1"
   },
   "bin": {
-    "documenter": "npx cypress run"
+    "documenter": "./bin/generate_docs.js"
   },
   "peerDependencies": {
-    "cypress": ">=12.0.0",
-    "typescript": ">=4.0.0 < 5.4.0"
+    "cypress": ">=12.0.0"
   }
 }

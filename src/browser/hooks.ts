@@ -40,6 +40,9 @@ export function setupDocAfterEachHook() {
       comment: meta.comment,
       actualResult,
       status,
+      skippedProcedure: [],
+      specRelativePath: meta.specRelativePath,
+      titlePath: meta.titlePath
     }
 
     // cy.task hands this off to the Node process, since only Node can write files.
