@@ -74,6 +74,8 @@ it('<expectedResult>', () => {
   })
 ```
 
+## Best Practices
+1. place the procedures 
 
 
 ## Frequently Asked Questions (FAQ)
