@@ -16,16 +16,14 @@ export function setupDocAfterEachHook() {
     // lets you adopt this incrementally, test by test.
     if (!meta) return
 
-    const state = this.currentTest?.state // 'passed' | 'failed' | 'pending'
+    const state = this.currentTest?.state // 'passed' | 'failed' | 'Skipped'
     const errorMessage = this.currentTest?.err?.message
 
-    const status: TestDocEntry['status'] = state === 'passed' ? 'Passed' : 'Failed'
+    const status: TestDocEntry['status'] = state === 'passed' ? 'Passed' : state === 'failed' ? 'Failed' : 'Blocked'
 
-    const actualResult =
-      meta.actualResultOverride ??
-      (status === 'Passed'
-        ? meta.expectedResult
-        : errorMessage || 'Test failed — see Cypress run log for details')
+    const actualResult = meta.actualResultOverride ?? (status === 'Passed' ? meta.expectedResult : errorMessage ?? 'No error message available')
+
+    const comment = meta.comment
 
     const entry: TestDocEntry = {
       suite: meta.suite,
@@ -37,9 +35,9 @@ export function setupDocAfterEachHook() {
       testData: meta.testData,
       expectedResult: meta.expectedResult,
       assigned: meta.assigned,
-      comment: meta.comment,
-      actualResult,
-      status,
+      comment: comment,
+      actualResult: actualResult,
+      status: status,
       skippedProcedure: [],
       specRelativePath: meta.specRelativePath,
       titlePath: meta.titlePath

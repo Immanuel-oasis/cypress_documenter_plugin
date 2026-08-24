@@ -1,0 +1,55 @@
+{
+  "Cypress Doc Test Block": {
+    "prefix": "cydoc",
+    "body": [
+      "cy.docTest({",
+      "  description: '$1',",
+      "  testData: '$2',",
+      "  expectedResult: '$3'",
+      "})"
+    ],
+    "description": "Insert cy.docTest block for the documentation plugin"
+  },
+  "Cypress Full It Block with DocTest": {
+    "prefix": "cyitdoc",
+    "body": [
+      "it('$1', () => {",
+      "  cy.docTest({",
+      "    description: '$1',",
+      "    testData: '$2',",
+      "    expectedResult: '$3'",
+      "  })",
+      "  $0",
+      "})"
+    ],
+    "description": "Insert a full it() block with cy.docTest pre-filled"
+  },
+  "Cypress Procedure Step": {
+    "prefix": "cyprocget",
+    "body": [
+      "cy.procedure('${1:procedure}')\ncy.get('${2:selector}').${3:action}()"
+    ],
+    "description": "Insert cy.procedure step"
+  },
+  "Cypress Procedure Step with contains": {
+    "prefix": "cyproccon",
+    "body": [
+      "cy.procedure('${1:procedure}')\ncy.contains('${2:lable}', '${3:selector}', {matchCase: false}).${4:action}()"
+    ],
+    "description": "Insert cy.procedure step with contains like"
+  },
+  "Cypress Precondition Step": {
+    "prefix": "cypre",
+    "body": [
+      "cy.precondition('$1')"
+    ],
+    "description": "Insert cy.precondition step"
+  },
+  "Cypress Actual Result": {
+    "prefix": "cyact",
+    "body": [
+      "cy.actualResult('$1'${2:, true})"
+    ],
+    "description": "Insert cy.actualResult (Press tab again to add ', true' to abort the test)"
+  }
+}

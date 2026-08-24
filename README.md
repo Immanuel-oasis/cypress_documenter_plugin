@@ -7,12 +7,14 @@ This plugin helps you generate and document your cypress commands in all one cod
 
 2. ```npm i ../<path you downloaded the file to>```  (we always recommend putting it in the same folder as your **Test folder** so it can be easy to point to when running the `npm i` command)
 
-3. Once you've successfully installed the plugin in your project follow just add the required (3) lines of code to the specified files as stated below
+3. Run the command ```npx setup-test-docs``` to add imports to the necessary files and configure the snippets file.
+
+4. Once you've successfully installed the plugin in your project follow just add the required (3) lines of code to the specified files as stated below
 
 #### In cypress.config file add 
 ```
 import { defineConfig } from "cypress";
-import { registerTestDocumentation } from 'cypress_test_documenter/src/node' // copy and paste
+import { registerTestDocumentation } from 'cypress_test_documenter/src/node' // already added
 
 export default defineConfig({
   allowCypressEnv: false,
@@ -27,7 +29,7 @@ export default defineConfig({
 ```
 
 #### support/e2e.ts
-`import 'cypress_test_documenter/src/browser' // add this line`
+`import 'cypress_test_documenter/src/browser' ` // add this line
 
 ## How to use
 
@@ -75,12 +77,12 @@ it('<expectedResult>', () => {
 ```
 
 ## Best Practices
-1. place the procedures 
+
 
 
 ## Frequently Asked Questions (FAQ)
-**Q1**- I followed all the steps but my cypress shows some errors <br>
-**Ans**: make sure you are using typescript version 5.*, as cypress doesnt currently support higher versions like 7
+**Q1** - I followed all the steps but my cypress shows some errors <br>
+**Ans** : make sure you are using typescript version 5.*, as cypress doesnt currently support higher versions like 7
 
-**Q2**- I am using typescript 5 and have everything else running but still get some tsconfig error <br>
-**Ans**: This is not a plugin issue you basically forgot to add tsconfig to you project. Do this by running `npx tsc --init`
+**Q2** - I am using typescript 5 and have everything else running but still get some tsconfig error <br>
+**Ans** : This is not a plugin issue you basically forgot to add tsconfig to you project. Do this by running `npx tsc --init`

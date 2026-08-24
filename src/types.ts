@@ -23,7 +23,7 @@ export interface TestDocMeta extends DocTestDetails {
 
 export interface TestDocEntry extends Omit<TestDocMeta, 'actualResultOverride'> {
   actualResult: string
-  status: 'Passed' | 'Failed'
+  status: 'Passed' | 'Failed' | 'Blocked'
   /** NEW: steps that were part of the test's source but never reached
    *  because an earlier step failed. Empty on a passing test. */
   skippedProcedure: string[]

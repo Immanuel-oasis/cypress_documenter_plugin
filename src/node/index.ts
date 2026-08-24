@@ -254,12 +254,12 @@ async function generateXlsx(entries: TestDocEntry[]) {
       name: 'Arial',
       size: 10,
       bold: true,
-      color: { argb: entry.status === 'Passed' ? 'FF006100' : 'FF9C0006' },
+      color: { argb: entry.status === 'Passed' ? 'FF006100' : entry.status === 'Failed' ? 'FF9C0006' : '000000' },
     }
     statusCell.fill = {
       type: 'pattern',
       pattern: 'solid',
-      fgColor: { argb: entry.status === 'Passed' ? 'FFC6EFCE' : 'FFFFC7CE' },
+      fgColor: { argb: entry.status === 'Passed' ? 'FFC6EFCE' : entry.status === 'Failed' ? 'FFFFC7CE' : 'FFC0C0C0' },
     }
   })
 

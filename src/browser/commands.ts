@@ -62,7 +62,7 @@ Cypress.Commands.add('actualResult', (actualResult: string) => {
       throw new Error('cy.actualResult() called before cy.docTest() — no active test doc to attach to')
     }
     currentDocMeta.actualResultOverride = actualResult
-    Cypress.log({ name: 'added actual result', message: actualResult })
+    throw new Error(actualResult)
   })
 })
 
