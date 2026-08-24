@@ -34,7 +34,8 @@ export default defineConfig({
 ## How to use
 
 expected data
-```{
+```
+{
   suite: string
   /** Optional e.g. "TC-HOME-001" */
   id?: string 
@@ -50,7 +51,8 @@ expected data
    * Optional override. If omitted, the afterEach hook fills this in automatically:
    */
   actualResultOverride?: string
-}```
+}
+```
 
 ``` 
 it('<expectedResult>', () => {
@@ -76,7 +78,7 @@ it('<expectedResult>', () => {
   })
 ```
 
-## Best Practices
+### Best Practices
 
 
 
