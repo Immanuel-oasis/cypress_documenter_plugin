@@ -3,9 +3,8 @@
     "prefix": "cydoc",
     "body": [
       "cy.docTest({",
-      "  description: '$1',",
-      "  testData: '$2',",
-      "  expectedResult: '$3'",
+      "  description: '$2',",
+      "  testData: `$3`",
       "})"
     ],
     "description": "Insert cy.docTest block for the documentation plugin"
@@ -15,19 +14,25 @@
     "body": [
       "it('$1', () => {",
       "  cy.docTest({",
-      "    description: '$1',",
-      "    testData: '$2',",
-      "    expectedResult: '$3'",
+      "    description: '$2',",
+      "    testData: `$3`",
       "  })",
       "  $0",
       "})"
     ],
     "description": "Insert a full it() block with cy.docTest pre-filled"
   },
-  "Cypress Procedure Step": {
+  "Cypress Procedure Step with get action": {
     "prefix": "cyprocget",
     "body": [
       "cy.procedure('${1:procedure}')\ncy.get('${2:selector}').${3:action}()"
+    ],
+    "description": "Insert cy.procedure step"
+  },
+  "Cypress Procedure Step no action": {
+    "prefix": "cyproc",
+    "body": [
+      "cy.procedure('${1:procedure}')"
     ],
     "description": "Insert cy.procedure step"
   },
@@ -41,7 +46,7 @@
   "Cypress Precondition Step": {
     "prefix": "cypre",
     "body": [
-      "cy.precondition('$1')"
+      "cy.precondition(`$1`)"
     ],
     "description": "Insert cy.precondition step"
   },
