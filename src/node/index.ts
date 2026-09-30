@@ -130,35 +130,32 @@ function resetEntries() {
   fs.writeFileSync(REGISTRY_FILE, JSON.stringify({ prefixCounters: {}, testKeyToId: {} }, null, 2))
 }
 
-/**
- * On a failed test, statically re-parses the spec file to recover every
- * cy.procedure() call that was WRITTEN for this test, including ones that
- * never ran because an earlier step failed. Diffs that against what
- * actually completed (entry.procedure, already populated at runtime) and
- * returns the remainder as "skipped".
- *
- * Assumes completed steps are always a prefix of the full list — true as
- * long as cy.procedure() calls execute in source order, which they do.
- *
- * Returns [] (not an error) if the file can't be parsed or the test can't
- * be located — skipped-step highlighting just silently doesn't apply.
- */
 function resolveSkippedProcedures(entry: TestDocEntry): string[] {
   if (entry.status !== 'Failed') return []
-  if (!entry.specRelativePath || !entry.titlePath) return []
 
   const absolutePath = path.resolve(process.cwd(), entry.specRelativePath)
   const fullList = extractFullProcedureList(absolutePath, entry.titlePath)
-  if (!fullList) return []
+  if (!fullList || fullList.length === 0) return []
 
-  // Completed steps should be a prefix of the full list. If they've
-  // diverged (e.g. the test was edited between runs), don't guess —
-  // just skip highlighting rather than show something misleading.
-  const completedCount = entry.procedure.length
-  const prefixMatches = entry.procedure.every((step, i) => fullList[i] === step)
-  if (!prefixMatches) return []
+  const runtime = entry.procedure
+  const staticList = fullList
+  const maxK = Math.min(runtime.length, staticList.length)
+  let matched = 0
+  for (let k = maxK; k >= 1; k--) {
+    let ok = true
+    for (let i = 0; i < k; i++) {
+      if (runtime[runtime.length - k + i] !== staticList[i]) {
+        ok = false
+        break
+      }
+    }
+    if (ok) {
+      matched = k
+      break
+    }
+  }
 
-  return fullList.slice(completedCount)
+  return staticList.slice(matched)
 }
 
 function formatList(value: string[] | string, numbered: boolean): string {
@@ -341,7 +338,7 @@ export function registerTestDocumentation(on: Cypress.PluginEvents, config: Cypr
 
   on('task', {
     recordTestDoc(entry: TestDocEntry) {
-      if (!isRunMode) return null
+      // if (!isRunMode) return null
 
       const registry = readRegistry()
       const finalId = resolveId(entry, registry)
@@ -357,7 +354,7 @@ export function registerTestDocumentation(on: Cypress.PluginEvents, config: Cypr
   })
 
   on('after:run', async () => {
-    if (!isRunMode) return
+    // if (!isRunMode) return
     await regenerateAndLog('after:run')
   })
 }

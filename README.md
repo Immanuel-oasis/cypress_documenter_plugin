@@ -14,7 +14,7 @@ This plugin helps you generate and document your cypress commands in all one cod
 #### In cypress.config file add 
 ```
 import { defineConfig } from "cypress";
-import { registerTestDocumentation } from 'cypress_test_documenter/src/node' // already added
+import { registerTestDocumentation } from 'cypress_test_documenter/src/node' // should be already added
 
 export default defineConfig({
   allowCypressEnv: false,
@@ -29,7 +29,7 @@ export default defineConfig({
 ```
 
 #### support/e2e.ts
-`import 'cypress_test_documenter/src/browser' ` // add this line
+`import 'cypress_test_documenter/src/browser' ` // this should already be added
 
 ## How to use
 

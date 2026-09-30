@@ -8,7 +8,7 @@ export function setupDocAfterEachHook() {
     // Documentation only happens during `cypress run` — never during
     // `cypress open`. This is what avoids duplicate/accumulating entries
     // from refreshing or re-running specs interactively.
-    if (Cypress.config('isInteractive')) return
+    // if (Cypress.config('isInteractive')) return
 
     const meta = getCurrentDocMeta()
 

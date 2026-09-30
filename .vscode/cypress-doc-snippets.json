@@ -13,6 +13,8 @@
     "prefix": "cyitdoc",
     "body": [
       "it('$1', () => {",
+      "//**/ Test scope variables",
+      "//*/",
       "  cy.docTest({",
       "    description: '$2',",
       "    testData: `$3`",
@@ -25,7 +27,7 @@
   "Cypress Procedure Step with get action": {
     "prefix": "cyprocget",
     "body": [
-      "cy.procedure('${1:procedure}')\ncy.get('${2:selector}').${3:action}()"
+      "cy.procedure('${1:procedure}')\ncy.get('${2:selector}').${3:action}($4)"
     ],
     "description": "Insert cy.procedure step"
   },
@@ -39,7 +41,7 @@
   "Cypress Procedure Step with contains": {
     "prefix": "cyproccon",
     "body": [
-      "cy.procedure('${1:procedure}')\ncy.contains('${2:lable}', '${3:selector}', {matchCase: false}).${4:action}()"
+      "cy.procedure('${1:procedure}')\ncy.contains('${2:label}', '${3:selector}', {matchCase: false}).${4:action}($5)"
     ],
     "description": "Insert cy.procedure step with contains like"
   },

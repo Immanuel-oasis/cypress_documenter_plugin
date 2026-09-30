@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 
-// 1. Setup Imports (from our previous chat)
+// 1. Setup Imports
 function injectImport(filePath, importLine, insertAfterKeyword) {
   if (!fs.existsSync(filePath)) return;
   let content = fs.readFileSync(filePath, 'utf8');
