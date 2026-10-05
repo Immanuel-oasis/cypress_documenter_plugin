@@ -28,3 +28,20 @@ export interface TestDocEntry extends Omit<TestDocMeta, 'actualResultOverride'> 
    *  because an earlier step failed. Empty on a passing test. */
   skippedProcedure: string[]
 }
+
+export interface TestDocOptions {
+  /**
+   * When true, on a failed test the last runtime procedure is moved from
+   * the "completed" list to the "skipped" list, so it renders in red
+   * italic in the spreadsheet.
+   *
+   * Enable this if you use cy.procedure() as a "what I'm about to do"
+   * comment — the last pushed procedure is then the one whose action was
+   * in-flight when the failure occurred.
+   *
+   * DANGER: mislabels the last procedure as "skipped" when the failure
+   * happened *after* that procedure's action completed (e.g., a later
+   * assertion failed). Only enable if you accept this trade-off.
+   */
+  markLastProcedureAsSkipped?: boolean
+}

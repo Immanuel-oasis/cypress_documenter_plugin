@@ -1,7 +1,7 @@
 import * as fs from 'fs'
 import * as path from 'node:path'
 import ExcelJS from 'exceljs'
-import type { TestDocEntry } from '../types'
+import type { TestDocEntry, TestDocOptions } from '../types'
 import { extractFullProcedureList } from './extractProcedure'
 
 const OUTPUT_DIR = path.join(process.cwd(), 'cypress', 'test-docs')
@@ -49,6 +49,26 @@ function writeRegistry(registry: IdRegistry) {
 function getBasePrefix(id: string): string {
   const match = id.match(/^(.*?)(?:-\d+)?$/)
   return match ? match[1] : id
+}
+
+
+function parseTestId(id: string): { prefix: string; suffix: number } | null {
+  const match = id.match(/^TC-([A-Z]+)-(\d+)$/)
+  if (!match) return null
+  return { prefix: match[1]!, suffix: parseInt(match[2]!, 10) }
+}
+
+
+function sortEntriesById(entries: TestDocEntry[]): TestDocEntry[] {
+  return [...entries].sort((a, b) => {
+    const pa = parseTestId(a.id || '')
+    const pb = parseTestId(b.id || '')
+    if (!pa && !pb) return 0
+    if (!pa) return 1   // unparseable IDs go last
+    if (!pb) return -1
+    if (pa.prefix !== pb.prefix) return pa.prefix.localeCompare(pb.prefix)
+    return pa.suffix - pb.suffix
+  })
 }
 
 function stripVowelsAfterFirst(word: string): string {
@@ -130,21 +150,40 @@ function resetEntries() {
   fs.writeFileSync(REGISTRY_FILE, JSON.stringify({ prefixCounters: {}, testKeyToId: {} }, null, 2))
 }
 
-function resolveSkippedProcedures(entry: TestDocEntry): string[] {
+function resolveSkippedProcedures(
+  entry: TestDocEntry,
+  markLastAsSkipped: boolean = false,
+): string[] {
   if (entry.status !== 'Failed') return []
 
   const absolutePath = path.resolve(process.cwd(), entry.specRelativePath)
   const fullList = extractFullProcedureList(absolutePath, entry.titlePath)
-  if (!fullList || fullList.length === 0) return []
+
+  // No static list available (parser couldn't find the test, or found
+  // zero procedures). Still honor markLastAsSkipped — the last runtime
+  // procedure is the in-flight step, regardless of what's in the spec.
+  if (!fullList || fullList.length === 0) {
+    if (markLastAsSkipped && entry.procedure.length > 0) {
+      const last = entry.procedure[entry.procedure.length - 1]!
+      entry.procedure = entry.procedure.slice(0, -1)
+      return [last]
+    }
+    return []
+  }
 
   const runtime = entry.procedure
   const staticList = fullList
+
+  // --- Suffix-prefix match (the fix from the previous round) ---
+  // Find the largest k such that the last k elements of `runtime` equal
+  // the first k elements of `staticList`. Handles the cy.login()
+  // preamble: runtime = [login...] + [test steps that completed].
   const maxK = Math.min(runtime.length, staticList.length)
   let matched = 0
   for (let k = maxK; k >= 1; k--) {
     let ok = true
     for (let i = 0; i < k; i++) {
-      if (runtime[runtime.length - k + i] !== staticList[i]) {
+      if (runtime[runtime.length - k + i] !== staticList[i]!) {
         ok = false
         break
       }
@@ -155,7 +194,29 @@ function resolveSkippedProcedures(entry: TestDocEntry): string[] {
     }
   }
 
-  return staticList.slice(matched)
+  let skipped = staticList.slice(matched)
+
+  // --- Optional: move the last runtime procedure to "skipped" ---
+  if (markLastAsSkipped && runtime.length > 0) {
+    const lastRuntime = runtime[runtime.length - 1]!
+    entry.procedure = runtime.slice(0, -1)
+
+    if (matched > 0) {
+      // lastRuntime === staticList[matched - 1] (guaranteed by the
+      // suffix-prefix match). Extend the slice left by one so the
+      // moved procedure lands at the start of `skipped` — no
+      // duplication, no gap.
+      skipped = staticList.slice(matched - 1)
+    } else {
+      // matched === 0 means lastRuntime is a runtime-only step
+      // (e.g. a login step from cy.login() that never made it into
+      // the static list). Prepend it — it won't duplicate anything
+      // in staticList.
+      skipped = [lastRuntime, ...skipped]
+    }
+  }
+
+  return skipped
 }
 
 function formatList(value: string[] | string, numbered: boolean): string {
@@ -313,8 +374,14 @@ function cleanupOldFiles() {
 }
 
 async function regenerateAndLog(source: string) {
-  const entries = readEntries()
+  let entries = readEntries()
   if (entries.length === 0) return
+
+  entries = sortEntriesById(entries)
+  ensureDir()
+  fs.writeFileSync(ENTRIES_FILE, JSON.stringify(entries, null, 2))
+
+  warnOnDuplicateIds(entries)
 
   const result = await generateXlsx(entries)
   // eslint-disable-next-line no-console
@@ -323,8 +390,9 @@ async function regenerateAndLog(source: string) {
   )
 }
 
-export function registerTestDocumentation(on: Cypress.PluginEvents, config: Cypress.PluginConfigOptions) {
+export function registerTestDocumentation(on: Cypress.PluginEvents, config: Cypress.PluginConfigOptions, options: TestDocOptions = {},) {
   const isRunMode = !config.isInteractive
+  const markLast = options.markLastProcedureAsSkipped === true
 
   on('before:run', () => {
     if (!isRunMode) return
@@ -345,10 +413,9 @@ export function registerTestDocumentation(on: Cypress.PluginEvents, config: Cypr
       entry.id = finalId
       writeRegistry(registry)
 
-      entry.skippedProcedure = resolveSkippedProcedures(entry)
+      entry.skippedProcedure = resolveSkippedProcedures(entry, markLast)
 
       writeEntries([entry])
-
       return null
     },
   })
